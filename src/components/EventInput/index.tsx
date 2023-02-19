@@ -26,6 +26,7 @@ export default (props: { onSend: (content: string, kind: number, tags: any[][], 
                             <input
                                 type="number"
                                 defaultValue={kind}
+                                onChange={v => setKind(Number(v.target.value))}
                                 onKeyDown={e => e.code === "Escape" && setShowCustomKind(false)}
                                 className="custom-kind-input"
                             />
