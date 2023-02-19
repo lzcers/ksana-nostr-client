@@ -173,12 +173,16 @@ export default () => {
 
     useEffect(() => {
         if (privkey.trim() === "") return;
-        const pubKeyBytes = secp.schnorr.getPublicKey(privkey);
-        const pubKey = secp.utils.bytesToHex(pubKeyBytes);
-        setPubkey(pubKey);
-        setEvents([]);
-        filters.forEach(filter => sendReq(filter));
-        sessionStorage.setItem("key", privkey);
+        try {
+            const pubKeyBytes = secp.schnorr.getPublicKey(privkey);
+            const pubKey = secp.utils.bytesToHex(pubKeyBytes);
+            setPubkey(pubKey);
+            setEvents([]);
+            filters.forEach(filter => sendReq(filter));
+            sessionStorage.setItem("key", privkey);
+        } catch (e) {
+            console.error(e);
+        }
     }, [privkey]);
 
     useEffect(() => {

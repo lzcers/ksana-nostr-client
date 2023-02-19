@@ -1,5 +1,6 @@
 import { useState } from "react";
 import Modal from "@/components/Modal";
+import * as secp from "@noble/secp256k1";
 import "./style.less";
 
 interface MyProps {
@@ -12,11 +13,12 @@ interface MyProps {
 const FilterModal = (props: MyProps) => {
     const { pubkey, privkey, hide, onChange } = props;
     const [key, setKey] = useState(privkey);
+    const [error, setError] = useState(false);
 
     return (
-        <Modal className="my-dialog">
+        <Modal className={"my-dialog"}>
             <form>
-                <fieldset>
+                <fieldset className={`${error ? "error-key" : ""}`}>
                     <legend>我的信息</legend>
                     <div className="form-group">
                         <label>公钥:</label>
@@ -39,7 +41,18 @@ const FilterModal = (props: MyProps) => {
                     <button className="btn btn-error btn-ghost" onClick={() => hide()}>
                         关闭
                     </button>
-                    <button className="btn btn-primary" onClick={_ => onChange(key)}>
+                    <button
+                        className="btn btn-primary"
+                        onClick={_ => {
+                            try {
+                                secp.getPublicKey(key);
+                                onChange(key);
+                                setError(false);
+                            } catch {
+                                setError(true);
+                            }
+                        }}
+                    >
                         修改
                     </button>
                 </div>
