@@ -28,7 +28,7 @@ export interface NostrFilter {
     limit: number;
 }
 
-const KSANA_RELAY_URL = "wss://io.ksana.net";
+const KSANA_RELAY_URL = "wss://relay.ksana.net";
 
 const filterEvent = (events: NostrEvent[], filter: Partial<NostrFilter>) => {
     const { ids, authors, kinds, since, until } = filter;
