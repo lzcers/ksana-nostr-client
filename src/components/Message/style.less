@@ -1,0 +1,45 @@
+.event {
+    margin: 1rem 0;
+
+    .hex {
+        display: inline-block;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+    .id {
+        width: 8rem;
+        cursor: pointer;
+    }
+    .pubkey {
+        margin-left: 1rem;
+        max-width: 20rem;
+        cursor: pointer;
+    }
+    .info-item {
+        display: flex;
+        flex-flow: row nowrap;
+        align-items: center;
+        font-style: italic;
+        font-size: 0.8rem;
+    }
+    .secret {
+        font-size: 1rem;
+        font-style: normal;
+        font-weight: bold;
+        margin-right: 0.5rem;
+        color: var(--error-color);
+    }
+    &-info {
+        display: flex;
+        flex-flow: row wrap;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 1.5rem;
+        .info-left {
+            flex: 1;
+            display: flex;
+            flex-flow: row nowrap;
+        }
+    }
+}

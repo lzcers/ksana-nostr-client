@@ -1,0 +1,41 @@
+.filter {
+    margin-top: 2rem;
+    display: flex;
+    flex-flow: row wrap;
+    .btn-filter {
+        line-height: 1.2rem;
+        padding: 0.2rem;
+        margin-right: 0.5rem;
+        margin-top: 0.5rem;
+    }
+
+    .form-group {
+        margin-bottom: 0.6rem;
+    }
+}
+.filter-dialog {
+    input {
+        height: 1.2rem;
+    }
+    input[type="datetime-local"] {
+        border: 1px var(--input-style) var(--font-color);
+        border-radius: 0;
+        outline: none;
+    }
+
+    input:invalid:required {
+        border-color: var(--error-color);
+    }
+
+    .dialog-opt {
+        display: flex;
+        flex-flow: row nowrap;
+        justify-content: space-between;
+        margin: 1rem 0;
+        button {
+            line-height: 1.2rem;
+            padding: 0.2rem;
+            margin-left: 0.5rem;
+        }
+    }
+}
