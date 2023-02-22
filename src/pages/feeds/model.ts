@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import * as secp from "@noble/secp256k1";
 import buffer from "buffer";
 
@@ -28,8 +28,8 @@ export interface NostrFilter {
     limit: number;
 }
 
-const KSANA_RELAY_URL = "wss://relay.ksana.net";
-// const KSANA_RELAY_URL = "ws://localhost:9002";
+// const KSANA_RELAY_URL = "wss://relay.ksana.net";
+const KSANA_RELAY_URL = "ws://127.0.0.1:9002";
 
 const filterEvent = (events: NostrEvent[], filter: Partial<NostrFilter>) => {
     const { ids, authors, kinds, since, until } = filter;
@@ -87,13 +87,14 @@ function decrypt(privkey: string, pubkey: string, ciphertext: string) {
 }
 
 export default () => {
+    const socketRef = useRef<WebSocket>();
     const [events, setEvents] = useState<NostrEvent[]>([]);
     const [filters, setFilters] = useState<(Partial<NostrFilter> & { id: string })[]>([]);
     const [activeFilter, setActiveFilter] = useState<Partial<NostrFilter> & { id: string }>();
     const [privkey, setPrivkey] = useState<Hex>("");
     const [pubkey, setPubkey] = useState<Hex>("");
-    const [socket, setSocket] = useState<WebSocket>();
     const [showMy, setShowMy] = useState(false);
+    const [connected, setConnected] = useState(false);
 
     const showEvents = useMemo(() => {
         const decryptContent = (e: NostrEvent, privkey: string) => {
@@ -115,27 +116,36 @@ export default () => {
             .sort((a, b) => b.created_at - a.created_at);
     }, [privkey, pubkey, events, activeFilter]);
 
-    const connect = () => {
-        const socket = new WebSocket(KSANA_RELAY_URL);
-        socket.addEventListener("open", () => {
-            console.log("connect relay success!");
-            setSocket(socket);
-        });
-        socket.addEventListener("message", event => {
-            const relayMsg = JSON.parse(event.data);
-            if (relayMsg[0] === "EVENT") {
-                const evt = relayMsg[2];
-                setEvents(prevEvts => {
-                    if (prevEvts.find(e => e.id === evt.id)) return prevEvts;
-                    return [evt, ...prevEvts];
-                });
-            }
+    const createAuthEvent = async (challenge: string, privkey: string, pubkey: string, relay: string) => {
+        const kind = 22242;
+        const created_at = Math.floor(new Date().getTime() / 1000);
+        const content = "";
+        const tags = [
+            ["relay", relay],
+            ["challenge", challenge],
+        ];
+        const id = await hashToHex(JSON.stringify([0, pubkey, created_at, kind, tags, ""]));
+        const sig = await sigToHex(id, privkey);
+
+        return { id, pubkey, created_at, kind, tags, content, sig };
+    };
+
+    const hashToHex = async (str: string) => {
+        const u8str = new TextEncoder().encode(str);
+        return secp.utils.bytesToHex(await secp.utils.sha256(u8str));
+    };
+
+    const sigToHex = async (str: string, privkey: string) => {
+        const sig = await secp.schnorr.sign(str, privkey);
+        return await secp.schnorr.verify(sig, str, pubkey).then(result => {
+            if (!result) return;
+            return secp.utils.bytesToHex(sig);
         });
     };
 
     const sendToSocket = (str: string) => {
-        if (!socket) return;
-        socket.send(str);
+        const socket = socketRef.current;
+        if (socket) socket.send(str);
     };
 
     const sendReq = async (req: Partial<NostrFilter> & { id: string }) => {
@@ -153,24 +163,61 @@ export default () => {
             newevent = [0, pubkey, now, kind, tags, privatenote];
             content = privatenote;
         }
-        const u8msg = new TextEncoder().encode(JSON.stringify(newevent));
-        var msghash = secp.utils.bytesToHex(await secp.utils.sha256(u8msg));
-        secp.schnorr.sign(msghash, privkey).then(sig => {
-            secp.schnorr.verify(sig, msghash, pubkey).then(result => {
-                if (!result) return;
-                var fullevent = {
-                    id: msghash,
-                    pubkey: pubkey,
-                    created_at: now,
-                    kind,
-                    tags,
-                    content: content,
-                    sig: secp.utils.bytesToHex(sig),
-                };
-                sendToSocket(JSON.stringify(["EVENT", fullevent]));
-            });
-        });
+        const msghash = await hashToHex(JSON.stringify(newevent));
+        const sigHex = await sigToHex(msghash, privkey);
+        const fullevent = {
+            id: msghash,
+            pubkey: pubkey,
+            created_at: now,
+            kind,
+            tags,
+            content: content,
+            sig: sigHex,
+        };
+        sendToSocket(JSON.stringify(["EVENT", fullevent]));
     };
+
+    const onRelayMessage = (event: MessageEvent<any>) => {
+        const relayMsg = JSON.parse(event.data);
+        if (relayMsg[0] === "EVENT") {
+            const evt = relayMsg[2];
+            setEvents(prevEvts => {
+                if (prevEvts.find(e => e.id === evt.id)) return prevEvts;
+                return [evt, ...prevEvts];
+            });
+        } else if (relayMsg[0] === "AUTH" && privkey && pubkey) {
+            createAuthEvent(relayMsg[1], privkey, pubkey, "wss://relay.ksana.net").then(authEvt => {
+                sendToSocket(JSON.stringify(["AUTH", authEvt]));
+            });
+        }
+    };
+
+    useEffect(() => {
+        const socket = socketRef.current;
+        if (!socket || !connected) return;
+        filters.forEach(filter => sendReq(filter));
+        if (!activeFilter && filters[0]) {
+            setActiveFilter(filters[0]);
+        }
+        if (activeFilter) {
+            const newActiveFilter = filters.find(f => f.id === activeFilter.id);
+            setActiveFilter(newActiveFilter);
+        }
+        localStorage.setItem("filters", JSON.stringify(filters));
+    }, [connected, pubkey, filters]);
+
+    useEffect(() => {
+        const socket = socketRef.current;
+        if (socket && (socket.CONNECTING || socket.CLOSED)) socket.close();
+        const newsocket = new WebSocket(KSANA_RELAY_URL);
+        newsocket.addEventListener("open", () => {
+            console.log("connect relay success!");
+            socketRef.current = newsocket;
+            setConnected(true);
+        });
+        newsocket.addEventListener("message", onRelayMessage);
+        newsocket.addEventListener("close", () => setConnected(false));
+    }, [pubkey]);
 
     useEffect(() => {
         if (privkey.trim() === "") return;
@@ -187,23 +234,9 @@ export default () => {
     }, [privkey]);
 
     useEffect(() => {
-        if (!socket) return;
-        filters.forEach(filter => sendReq(filter));
-        if (!activeFilter && filters[0]) {
-            setActiveFilter(filters[0]);
-        }
-        if (activeFilter) {
-            const newActiveFilter = filters.find(f => f.id === activeFilter.id);
-            setActiveFilter(newActiveFilter);
-        }
-        localStorage.setItem("filters", JSON.stringify(filters));
-    }, [socket, filters]);
-
-    useEffect(() => {
-        connect();
-        const pk = sessionStorage.getItem("key");
+        const sk = sessionStorage.getItem("key");
         const filters = localStorage.getItem("filters");
-        if (pk) setPrivkey(pk);
+        if (sk) setPrivkey(sk);
         if (filters) setFilters(JSON.parse(filters));
     }, []);
 
