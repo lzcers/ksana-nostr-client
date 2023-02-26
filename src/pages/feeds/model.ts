@@ -94,7 +94,6 @@ export default () => {
     const [privkey, setPrivkey] = useState<Hex>("");
     const [pubkey, setPubkey] = useState<Hex>("");
     const [showMy, setShowMy] = useState(false);
-    const [connected, setConnected] = useState(false);
 
     const showEvents = useMemo(() => {
         const decryptContent = (e: NostrEvent, privkey: string) => {
@@ -177,46 +176,43 @@ export default () => {
         sendToSocket(JSON.stringify(["EVENT", fullevent]));
     };
 
-    const onRelayMessage = (event: MessageEvent<any>) => {
-        const relayMsg = JSON.parse(event.data);
-        if (relayMsg[0] === "EVENT") {
-            const evt = relayMsg[2];
-            setEvents(prevEvts => {
-                if (prevEvts.find(e => e.id === evt.id)) return prevEvts;
-                return [evt, ...prevEvts];
-            });
-        } else if (relayMsg[0] === "AUTH" && privkey && pubkey) {
-            createAuthEvent(relayMsg[1], privkey, pubkey, "wss://relay.ksana.net").then(authEvt => {
-                sendToSocket(JSON.stringify(["AUTH", authEvt]));
-            });
-        }
-    };
+    useEffect(() => {
+        activeFilter && sendReq(activeFilter);
+    }, [activeFilter]);
 
     useEffect(() => {
-        const socket = socketRef.current;
-        if (!socket || !connected) return;
-        filters.forEach(filter => sendReq(filter));
-        if (!activeFilter && filters[0]) {
-            setActiveFilter(filters[0]);
-        }
         if (activeFilter) {
             const newActiveFilter = filters.find(f => f.id === activeFilter.id);
             setActiveFilter(newActiveFilter);
         }
         localStorage.setItem("filters", JSON.stringify(filters));
-    }, [connected, pubkey, filters]);
+    }, [filters]);
 
     useEffect(() => {
-        const socket = socketRef.current;
-        if (socket && (socket.CONNECTING || socket.CLOSED)) socket.close();
-        const newsocket = new WebSocket(KSANA_RELAY_URL);
-        newsocket.addEventListener("open", () => {
+        if (pubkey.trim() === "") return;
+        const socket = new WebSocket(KSANA_RELAY_URL);
+        socket.addEventListener("open", () => {
             console.log("connect relay success!");
-            socketRef.current = newsocket;
-            setConnected(true);
+            socketRef.current = socket;
         });
-        newsocket.addEventListener("message", onRelayMessage);
-        newsocket.addEventListener("close", () => setConnected(false));
+        socket.addEventListener("message", event => {
+            const relayMsg = JSON.parse(event.data);
+            if (relayMsg[0] === "EVENT") {
+                const evt = relayMsg[2];
+                setEvents(prevEvts => {
+                    if (prevEvts.find(e => e.id === evt.id)) return prevEvts;
+                    return [evt, ...prevEvts];
+                });
+            } else if (relayMsg[0] === "AUTH" && privkey && pubkey) {
+                createAuthEvent(relayMsg[1], privkey, pubkey, "wss://relay.ksana.net").then(authEvt => {
+                    sendToSocket(JSON.stringify(["AUTH", authEvt]));
+                });
+            }
+        });
+        () => {
+            const socket = socketRef.current;
+            if (socket && (socket.CONNECTING || socket.CLOSED)) socket.close();
+        };
     }, [pubkey]);
 
     useEffect(() => {
@@ -226,14 +222,13 @@ export default () => {
             const pubKey = secp.utils.bytesToHex(pubKeyBytes);
             setPubkey(pubKey);
             setEvents([]);
-            filters.forEach(filter => sendReq(filter));
             sessionStorage.setItem("key", privkey);
         } catch (e) {
             console.error(e);
         }
     }, [privkey]);
 
-    useEffect(() => {
+    useLayoutEffect(() => {
         const sk = sessionStorage.getItem("key");
         const filters = localStorage.getItem("filters");
         if (sk) setPrivkey(sk);

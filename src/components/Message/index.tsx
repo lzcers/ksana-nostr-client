@@ -37,7 +37,7 @@ export default (props: { event: NostrEvent }) => {
                 </div>
             </div>
 
-            <div>{event.content}</div>
+            <div className="event-content">{event.content}</div>
             <hr />
         </div>
     );
